@@ -1,21 +1,3 @@
-Of course. Expanding the project to include cryptocurrencies is an excellent idea. The existing multi-agent architecture is very well-suited for this. The key is to adapt the data sources and the "fundamental analysis" part of the process, as crypto fundamentals are very different from stock fundamentals.
-
-Here is a comprehensive, phased plan to extend `TradingAgents-CN` to support cryptocurrency analysis.
-
-### 🎯 Overall Strategy
-
-We will follow a phased approach, starting with foundational data integration and progressively adding more sophisticated, crypto-specific analysis capabilities. The goal is to reuse as much of the existing framework (the graph orchestrator, technical analysis, report generation) as possible while creating new, specialized components for crypto.
-
-I will now create a detailed task list for this project.
-
-
-
-[1 tool called]
-
-Of course. Extending the project to support cryptocurrencies is an excellent idea. Given the project's modular architecture, this is very feasible. The key is to adapt the existing agent-based workflow for the unique characteristics of the crypto market.
-
-Here is a comprehensive, phased plan to guide the development process. I have broken it down into actionable steps.
-
 ### High-Level Strategy
 
 The core idea is to treat "Cryptocurrency" as a new `market_type`. We will then create crypto-specific data sources and analysis agents, and use the existing `TradingAgentsGraph` orchestrator to route tasks to these new components when a crypto analysis is requested. We will retain as much of the existing structure as possible, especially for technical analysis and workflow management.

@@ -18,6 +18,8 @@ services:
       - ./logs:/app/logs
       # 配置目录映射 - 重要：持久化token统计和其他配置数据
       - ./config:/app/config
+      # 报告目录映射 - 重要：将容器内报告映射到当前项目的results目录
+      - ./results:/app/results
     env_file:
       - .env
     environment:
@@ -38,6 +40,8 @@ services:
       # Docker环境标识和PDF支持
       DOCKER_CONTAINER: "true"
       DISPLAY: ":99"
+      # Docker环境报告路径配置
+      TRADINGAGENTS_RESULTS_DIR: "/app/results"
     command: /usr/local/bin/start-xvfb.sh python -m streamlit run web/app.py --server.address=0.0.0.0 --server.port=8501
     depends_on:
       - mongodb

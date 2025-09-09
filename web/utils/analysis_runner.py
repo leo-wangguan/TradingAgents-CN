@@ -649,8 +649,8 @@ def format_analysis_results(results):
         'fundamentals_report',
         'sentiment_report',
         'news_report',
-        'risk_assessment',
-        'investment_plan',
+        #'risk_assessment',
+        #'investment_plan',
         # 添加缺失的团队决策数据，确保与CLI端一致
         'investment_debate_state',  # 研究团队辩论（多头/空头研究员）
         'trader_investment_plan',   # 交易团队计划

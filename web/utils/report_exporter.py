@@ -212,9 +212,9 @@ class ReportExporter:
             ('market_report', '📈 市场技术分析', '技术指标、价格趋势、支撑阻力位分析'),
             ('fundamentals_report', '💰 基本面分析', '财务数据、估值水平、盈利能力分析'),
             ('sentiment_report', '💭 市场情绪分析', '投资者情绪、社交媒体情绪指标'),
-            ('news_report', '📰 新闻事件分析', '相关新闻事件、市场动态影响分析'),
-            ('risk_assessment', '⚠️ 风险评估', '风险因素识别、风险等级评估'),
-            ('investment_plan', '📋 投资建议', '具体投资策略、仓位管理建议')
+            ('news_report', '📰 新闻事件分析', '相关新闻事件、市场动态影响分析')
+            #('risk_assessment', '⚠️ 风险评估', '风险因素识别、风险等级评估'),
+            #('investment_plan', '📋 投资建议', '具体投资策略、仓位管理建议')
         ]
         
         for key, title, description in analysis_modules:
@@ -290,7 +290,7 @@ class ReportExporter:
         # IV. 风险管理团队决策
         if 'risk_debate_state' in state and state['risk_debate_state']:
             md_content += "\n---\n\n## ⚖️ 风险管理团队决策\n\n"
-            md_content += "*激进/保守/中性分析师风险评估，投资组合经理最终决策*\n\n"
+            md_content += "*多层次风险评估和辩论过程*\n\n"
 
             risk_state = state['risk_debate_state']
 
@@ -309,10 +309,14 @@ class ReportExporter:
                 md_content += "### ⚖️ 中性分析师评估\n\n"
                 md_content += f"{self._clean_text_for_markdown(risk_state['neutral_history'])}\n\n"
 
-            # 投资组合经理决策
-            if risk_state.get('judge_decision'):
-                md_content += "### 🎯 投资组合经理最终决策\n\n"
-                md_content += f"{self._clean_text_for_markdown(risk_state['judge_decision'])}\n\n"
+            # 添加辩论总结，但不包含最终决策
+            if risk_state.get('risky_history') or risk_state.get('safe_history') or risk_state.get('neutral_history'):
+                md_content += "### 📋 风险辩论总结\n\n"
+                md_content += "以上三位风险分析师从不同角度评估了投资风险：\n\n"
+                md_content += "- **激进分析师**：关注高收益机会和市场突破可能性\n"
+                md_content += "- **保守分析师**：强调本金保护和下行风险控制\n"
+                md_content += "- **中性分析师**：平衡风险收益，提供灵活调整建议\n\n"
+                md_content += "最终决策请参考《最终交易决策》部分。\n\n"
 
         # V. 最终交易决策
         if 'final_trade_decision' in state and state['final_trade_decision']:
@@ -341,7 +345,7 @@ class ReportExporter:
                 formatted_content += f"{content['judge_decision']}\n\n"
 
         elif module_key == 'risk_debate_state':
-            # 风险管理团队决策格式化
+            # 风险管理团队决策格式化 - 只显示风险分析师的辩论过程，不包含最终决策
             if content.get('risky_history'):
                 formatted_content += "## 🚀 激进分析师评估\n\n"
                 formatted_content += f"{content['risky_history']}\n\n"
@@ -354,9 +358,14 @@ class ReportExporter:
                 formatted_content += "## ⚖️ 中性分析师评估\n\n"
                 formatted_content += f"{content['neutral_history']}\n\n"
 
-            if content.get('judge_decision'):
-                formatted_content += "## 🎯 投资组合经理最终决策\n\n"
-                formatted_content += f"{content['judge_decision']}\n\n"
+            # 添加辩论总结，但不包含最终决策
+            if content.get('risky_history') or content.get('safe_history') or content.get('neutral_history'):
+                formatted_content += "## 📋 风险辩论总结\n\n"
+                formatted_content += "以上三位风险分析师从不同角度评估了投资风险：\n\n"
+                formatted_content += "- **激进分析师**：关注高收益机会和市场突破可能性\n"
+                formatted_content += "- **保守分析师**：强调本金保护和下行风险控制\n"
+                formatted_content += "- **中性分析师**：平衡风险收益，提供灵活调整建议\n\n"
+                formatted_content += "最终决策请参考《最终交易决策》报告。\n\n"
 
         return formatted_content
 

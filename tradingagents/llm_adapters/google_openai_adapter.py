@@ -59,10 +59,18 @@ class ChatGoogleOpenAI(ChatGoogleGenerativeAI):
             
             # 优化返回内容格式
             if result and result.generations:
-                for generation in result.generations:
-                    if hasattr(generation, 'message') and generation.message:
-                        # 优化消息内容格式
-                        self._optimize_message_content(generation.message)
+                for generation_list in result.generations:
+                    # 检查generation_list是否为列表
+                    if isinstance(generation_list, list):
+                        for generation in generation_list:
+                            if hasattr(generation, 'message') and generation.message:
+                                # 优化消息内容格式
+                                self._optimize_message_content(generation.message)
+                    else:
+                        # 如果不是列表，直接处理
+                        if hasattr(generation_list, 'message') and generation_list.message:
+                            # 优化消息内容格式
+                            self._optimize_message_content(generation_list.message)
             
             # 追踪 token 使用量
             self._track_token_usage(result, kwargs)

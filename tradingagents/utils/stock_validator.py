@@ -65,7 +65,7 @@ class StockDataPreparer:
 
         Args:
             stock_code: 股票代码
-            market_type: 市场类型 ("A股", "港股", "美股", "auto")
+            market_type: 市场类型 ("A股", "港股", "美股", "加密货币", "auto")
             period_days: 历史数据时长（天），默认使用类初始化时的值
             analysis_date: 分析日期，默认为今天
 
@@ -145,6 +145,17 @@ class StockDataPreparer:
                     error_message="美股代码格式错误，应为1-5位字母",
                     suggestion="请输入1-5位字母的美股代码，如：AAPL、TSLA"
                 )
+        elif market_type == "加密货币":
+            # 加密货币：允许常见的字母符号（BTC/ETH），也允许小写id（bitcoin/ethereum）
+            sc = stock_code.strip()
+            if not re.match(r'^[A-Za-z0-9\-]{2,20}$', sc):
+                return StockDataPreparationResult(
+                    is_valid=False,
+                    stock_code=stock_code,
+                    market_type="加密货币",
+                    error_message="加密货币代码格式错误",
+                    suggestion="请输入常见符号如 BTC/ETH 或 CoinGecko ID 如 bitcoin/ethereum"
+                )
         
         return StockDataPreparationResult(
             is_valid=True,
@@ -167,6 +178,10 @@ class StockDataPreparer:
         # 美股：1-5位字母
         if re.match(r'^[A-Z]{1,5}$', stock_code):
             return "美股"
+
+        # 简单识别加密货币：常见符号或小写id（带-）
+        if re.match(r'^[A-Z]{2,10}$', stock_code) or re.match(r'^[a-z0-9\-]{2,30}$', stock_code.lower()):
+            return "加密货币"
         
         return "未知"
 
@@ -271,6 +286,8 @@ class StockDataPreparer:
                 return self._prepare_hk_stock_data(stock_code, period_days, analysis_date)
             elif market_type == "美股":
                 return self._prepare_us_stock_data(stock_code, period_days, analysis_date)
+            elif market_type == "加密货币":
+                return self._prepare_crypto_data(stock_code, period_days, analysis_date)
             else:
                 return StockDataPreparationResult(
                     is_valid=False,
@@ -288,6 +305,24 @@ class StockDataPreparer:
                 error_message=f"数据准备过程中发生错误: {str(e)}",
                 suggestion="请检查网络连接或稍后重试"
             )
+
+    def _prepare_crypto_data(self, symbol: str, period_days: int,
+                             analysis_date: str) -> StockDataPreparationResult:
+        """预获取加密货币数据（轻量验证）"""
+        logger.info(f"🪙 [加密数据] 开始准备{symbol}的数据 (时长: {period_days}天)")
+
+        # 对于加密货币，名称直接使用符号；历史数据/基本信息由后续分析师获取
+        stock_name = symbol.upper()
+        return StockDataPreparationResult(
+            is_valid=True,
+            stock_code=symbol,
+            market_type="加密货币",
+            stock_name=stock_name,
+            has_historical_data=False,
+            has_basic_info=False,
+            data_period_days=period_days,
+            cache_status="加密货币前置校验通过"
+        )
 
     def _prepare_china_stock_data(self, stock_code: str, period_days: int,
                                  analysis_date: str) -> StockDataPreparationResult:

@@ -112,6 +112,7 @@ class GraphSetup:
         if "fundamentals" in selected_analysts:
             # 现在所有LLM都使用标准基本面分析师（包括阿里百炼的OpenAI兼容适配器）
             llm_provider = self.config.get("llm_provider", "").lower()
+            market_type_cfg = self.config.get("market_type", "")
 
             # 检查是否使用OpenAI兼容的阿里百炼适配器
             using_dashscope_openai = (
@@ -129,10 +130,17 @@ class GraphSetup:
             else:
                 logger.debug(f"📊 [DEBUG] 使用标准基本面分析师")
 
-            # 所有LLM都使用标准分析师（包含强制工具调用机制）
-            analyst_nodes["fundamentals"] = create_fundamentals_analyst(
-                self.quick_thinking_llm, self.toolkit
-            )
+            # 根据市场类型切换：加密货币使用 CryptoProjectAnalyst，其余使用股票基本面分析师
+            if market_type_cfg == "加密货币":
+                logger.debug(f"🪙 [DEBUG] 加密市场：使用CryptoProjectAnalyst替代FundamentalsAnalyst")
+                analyst_nodes["fundamentals"] = create_crypto_project_analyst(
+                    self.quick_thinking_llm
+                )
+            else:
+                # 所有LLM都使用标准分析师（包含强制工具调用机制）
+                analyst_nodes["fundamentals"] = create_fundamentals_analyst(
+                    self.quick_thinking_llm, self.toolkit
+                )
             delete_nodes["fundamentals"] = create_msg_delete()
             tool_nodes["fundamentals"] = self.tool_nodes["fundamentals"]
 

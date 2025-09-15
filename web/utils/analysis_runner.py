@@ -424,6 +424,10 @@ def run_stock_analysis(stock_symbol, analysis_date, analysts, research_depth, ll
                 if formatted_symbol.isdigit():
                     formatted_symbol = f"{formatted_symbol.zfill(4)}.HK"
             update_progress(f"🇭🇰 准备分析港股: {formatted_symbol}")
+        elif market_type == "加密货币":
+            # 加密货币ID转为小写，保持原样
+            formatted_symbol = stock_symbol.lower().strip()
+            update_progress(f"🪙 准备分析加密货币: {formatted_symbol}")
         else:
             # 美股代码转为大写
             formatted_symbol = stock_symbol.upper()
@@ -725,6 +729,11 @@ def validate_analysis_params(stock_symbol, analysis_date, analysts, research_dep
             import re
             if not re.match(r'^[A-Z]{1,5}$', symbol.upper()):
                 errors.append("美股代码格式错误，应为1-5位字母（如：AAPL）")
+        elif market_type == "加密货币":
+            # 加密货币：字母数字组合，小写
+            import re
+            if not re.match(r'^[a-z0-9-]+$', symbol.lower()):
+                errors.append("加密货币ID格式错误，应为字母数字组合（如：bitcoin, ethereum）")
     
     # 验证分析师列表
     if not analysts or len(analysts) == 0:
@@ -788,6 +797,10 @@ def generate_demo_results_deprecated(stock_symbol, analysis_date, analysts, rese
         currency_symbol = "¥"
         price_range = (5, 100)   # A股价格范围
         market_name = "A股"
+    elif market_type == "加密货币":
+        currency_symbol = "$"
+        price_range = (1000, 100000)  # 加密货币价格范围
+        market_name = "加密货币"
     else:  # 美股
         currency_symbol = "$"
         price_range = (50, 300)  # 美股价格范围

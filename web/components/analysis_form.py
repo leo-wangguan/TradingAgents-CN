@@ -34,7 +34,7 @@ def render_analysis_form():
         
         with col1:
             # 市场选择（使用缓存的值）
-            market_options = ["美股", "A股", "港股"]
+            market_options = ["美股", "A股", "港股", "加密货币"]
             cached_market = cached_config.get('market_type', 'A股') if cached_config else 'A股'
             try:
                 market_index = market_options.index(cached_market)
@@ -45,7 +45,7 @@ def render_analysis_form():
                 "选择市场 🌍",
                 options=market_options,
                 index=market_index,
-                help="选择要分析的股票市场"
+                help="选择要分析的市场类型"
             )
 
             # 根据市场类型显示不同的输入提示
@@ -74,6 +74,18 @@ def render_analysis_form():
                 ).upper().strip()
 
                 logger.debug(f"🔍 [FORM DEBUG] 港股text_input返回值: '{stock_symbol}'")
+
+            elif market_type == "加密货币":
+                stock_symbol = st.text_input(
+                    "加密货币代码 🪙",
+                    value=cached_stock if (cached_config and cached_config.get('market_type') == '加密货币') else '',
+                    placeholder="输入加密货币ID，如 bitcoin, ethereum, cardano，然后按回车确认",
+                    help="输入要分析的加密货币ID，如 bitcoin(BTC), ethereum(ETH), cardano(ADA)，输入完成后请按回车键确认",
+                    key="crypto_input",
+                    autocomplete="off"  # 修复autocomplete警告
+                ).lower().strip()
+
+                logger.debug(f"🔍 [FORM DEBUG] 加密货币text_input返回值: '{stock_symbol}'")
 
             else:  # A股
                 stock_symbol = st.text_input(

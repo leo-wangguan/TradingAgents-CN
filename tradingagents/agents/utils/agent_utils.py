@@ -909,6 +909,7 @@ class Toolkit:
             is_china = market_info['is_china']
             is_hk = market_info['is_hk']
             is_us = market_info['is_us']
+            is_crypto = market_info['is_crypto']
 
             logger.info(f"📈 [统一市场工具] 股票类型: {market_info['market_name']}")
             logger.info(f"📈 [统一市场工具] 货币: {market_info['currency_name']} ({market_info['currency_symbol']}")
@@ -936,6 +937,33 @@ class Toolkit:
                     result_data.append(f"## 港股市场数据\n{hk_data}")
                 except Exception as e:
                     result_data.append(f"## 港股市场数据\n获取失败: {e}")
+
+            elif is_crypto:
+                # 加密货币：使用加密货币数据源
+                logger.info(f"🪙 [统一市场工具] 处理加密货币市场数据...")
+
+                try:
+                    from tradingagents.dataflows.crypto_data_source_manager import get_crypto_data_unified
+                    from datetime import datetime
+                    
+                    # 将日期范围转换为天数
+                    start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                    end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                    days = (end_dt - start_dt).days + 1
+                    
+                    # 将加密货币符号转换为CoinGecko ID
+                    coin_id = ticker.lower()  # 大多数情况下，符号就是ID
+                    if coin_id == 'btc':
+                        coin_id = 'bitcoin'
+                    elif coin_id == 'eth':
+                        coin_id = 'ethereum'
+                    elif coin_id == 'ada':
+                        coin_id = 'cardano'
+                    
+                    crypto_data = get_crypto_data_unified(coin_id, 'usd', days, 'market')
+                    result_data.append(f"## 加密货币市场数据\n{crypto_data}")
+                except Exception as e:
+                    result_data.append(f"## 加密货币市场数据\n获取失败: {e}")
 
             else:
                 # 美股：使用Yahoo Finance数据源

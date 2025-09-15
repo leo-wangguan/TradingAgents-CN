@@ -17,6 +17,7 @@ class StockMarket(Enum):
     CHINA_A = "china_a"      # 中国A股
     HONG_KONG = "hong_kong"  # 港股
     US = "us"                # 美股
+    CRYPTO = "crypto"        # 加密货币
     UNKNOWN = "unknown"      # 未知
 
 
@@ -47,7 +48,22 @@ class StockUtils:
         if re.match(r'^\d{4,5}\.HK$', ticker):
             return StockMarket.HONG_KONG
 
-        # 美股：1-5位字母
+        # 加密货币：常见的加密货币符号（BTC, ETH, ADA等）
+        # 注意：这个检查必须在美股检查之前，因为加密货币符号也是字母
+        crypto_symbols = {
+            'BTC', 'ETH', 'ADA', 'DOT', 'LINK', 'MATIC', 'AVAX', 'SOL', 'ATOM', 'NEAR',
+            'FTM', 'ALGO', 'VET', 'ICP', 'FIL', 'TRX', 'XRP', 'LTC', 'BCH', 'EOS',
+            'XLM', 'XTZ', 'ZEC', 'DASH', 'NEO', 'IOTA', 'ONT', 'QTUM', 'ZIL', 'ICX',
+            'WAVES', 'KMD', 'SC', 'DCR', 'LSK', 'ARK', 'REP', 'GNT', 'BAT', 'ZRX',
+            'KNC', 'LRC', 'OMG', 'SNT', 'MKR', 'DAI', 'USDC', 'USDT', 'BUSD', 'TUSD',
+            'PAX', 'GUSD', 'SUSD', 'FRAX', 'LUSD', 'DUSD', 'CUSD', 'MUSD', 'RSV',
+            'USDK', 'USDN', 'USDP', 'USDS', 'DOGE', 'SHIB', 'PEPE', 'FLOKI', 'BONK'
+        }
+        
+        if ticker in crypto_symbols:
+            return StockMarket.CRYPTO
+
+        # 美股：1-5位字母（在加密货币检查之后）
         if re.match(r'^[A-Z]{1,5}$', ticker):
             return StockMarket.US
             
@@ -93,6 +109,19 @@ class StockUtils:
         return StockUtils.identify_stock_market(ticker) == StockMarket.US
     
     @staticmethod
+    def is_crypto(ticker: str) -> bool:
+        """
+        判断是否为加密货币
+        
+        Args:
+            ticker: 股票代码
+            
+        Returns:
+            bool: 是否为加密货币
+        """
+        return StockUtils.identify_stock_market(ticker) == StockMarket.CRYPTO
+    
+    @staticmethod
     def get_currency_info(ticker: str) -> Tuple[str, str]:
         """
         根据股票代码获取货币信息
@@ -111,6 +140,8 @@ class StockUtils:
             return "港币", "HK$"
         elif market == StockMarket.US:
             return "美元", "$"
+        elif market == StockMarket.CRYPTO:
+            return "美元", "$"  # 加密货币通常以美元计价
         else:
             return "未知", "?"
     
@@ -133,6 +164,8 @@ class StockUtils:
             return "yahoo_finance"  # 港股使用Yahoo Finance
         elif market == StockMarket.US:
             return "yahoo_finance"  # 美股使用Yahoo Finance
+        elif market == StockMarket.CRYPTO:
+            return "crypto_unified"  # 使用统一的加密货币数据源
         else:
             return "unknown"
     
@@ -181,6 +214,7 @@ class StockUtils:
             StockMarket.CHINA_A: "中国A股",
             StockMarket.HONG_KONG: "港股",
             StockMarket.US: "美股",
+            StockMarket.CRYPTO: "加密货币",
             StockMarket.UNKNOWN: "未知市场"
         }
         
@@ -193,7 +227,8 @@ class StockUtils:
             "data_source": data_source,
             "is_china": market == StockMarket.CHINA_A,
             "is_hk": market == StockMarket.HONG_KONG,
-            "is_us": market == StockMarket.US
+            "is_us": market == StockMarket.US,
+            "is_crypto": market == StockMarket.CRYPTO
         }
 
 

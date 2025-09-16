@@ -60,9 +60,16 @@ def create_crypto_project_analyst(llm, toolkit=None):
             # 放宽判定：若StockUtils判为非加密，但存在明确的CoinGecko映射，则仍按加密处理
             is_crypto = market_info.get("is_crypto", False)
             if not is_crypto:
-                if coin_id and coin_id != str(ticker).strip().lower():
-                    logger.info("🪙 [加密项目分析师] 通过符号映射识别为加密资产，继续")
-                else:
+                # 方案2：尝试通过 repository 拉取结构化数据验证是否为有效加密项目
+                try:
+                    from tradingagents.dataflows.crypto_project_repository import get_project_bundle
+                    bundle = get_project_bundle(coin_id)
+                    if bundle and isinstance(bundle.get('coin_data'), dict):
+                        logger.info("🪙 [加密项目分析师] 虽非股票工具识别为加密，但仓库数据有效，继续")
+                    else:
+                        logger.info("🪙 [加密项目分析师] 目标非加密资产，跳过")
+                        return state
+                except Exception:
                     logger.info("🪙 [加密项目分析师] 目标非加密资产，跳过")
                     return state
 

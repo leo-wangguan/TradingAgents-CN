@@ -26,7 +26,10 @@ This phase is about getting the basic data plumbing in place.
 
 Now we adapt the AI agents. The `Fundamentals Analyst` for stocks is not applicable to crypto, so we will create a new, specialized agent.
 
-*   [ ] **2.1: Adapt `Market Analyst`**: This agent's role (technical analysis) is largely the same for stocks and crypto. The main change is pointing it to the new crypto data source for price, volume, and indicator calculations.
+*   [x] **2.1: Adapt `Market Analyst`**: This agent's role (technical analysis) is largely the same for stocks and crypto. The main change is pointing it to the new crypto data source for price, volume, and indicator calculations.
+    *   ✅ Implemented: Created `CryptoMarketAnalyst` dedicated to crypto market analysis
+    *   ✅ Graph routing: When `market_type == "加密货币"`, route to `CryptoMarketAnalyst`
+    *   ✅ Uses `Toolkit.get_stock_market_data_unified` (crypto branch → CoinGecko)
     *   **Priority**: High - Core functionality for crypto analysis
 *   [ ] **2.2: Create `CryptoProjectAnalyst` Agent**: This is the most critical step. This new agent will replace the `Fundamentals Analyst`. Its responsibilities will be to analyze:
     *   **Tokenomics**: Supply, distribution, inflation/deflation mechanics.

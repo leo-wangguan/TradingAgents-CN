@@ -31,11 +31,16 @@ class CryptoDataSource(Enum):
 
 class CryptoDataSourceManager:
     """加密货币数据源管理器"""
+    
+    # 类级别的缓存，避免重复检查
+    _source_check_cache = None
+    _cache_timestamp = None
+    _cache_duration = 300  # 5分钟缓存
 
     def __init__(self):
         """初始化加密货币数据源管理器"""
         self.default_source = self._get_default_source()
-        self.available_sources = self._check_available_sources()
+        self.available_sources = self._check_available_sources_cached()
         self.current_source = self.default_source
 
         logger.info(f"🪙 加密货币数据源管理器初始化完成")
@@ -56,27 +61,31 @@ class CryptoDataSourceManager:
         
         return source_mapping.get(env_source, CryptoDataSource.COINGECKO)
     
+    def _check_available_sources_cached(self) -> List[CryptoDataSource]:
+        """检查可用的加密货币数据源（带缓存）"""
+        current_time = time.time()
+        
+        # 检查缓存是否有效
+        if (CryptoDataSourceManager._source_check_cache is not None and 
+            CryptoDataSourceManager._cache_timestamp is not None and
+            current_time - CryptoDataSourceManager._cache_timestamp < CryptoDataSourceManager._cache_duration):
+            logger.debug("🔄 使用缓存的数据源检查结果")
+            return CryptoDataSourceManager._source_check_cache
+        
+        # 执行实际检查
+        available_sources = self._check_available_sources()
+        
+        # 更新缓存
+        CryptoDataSourceManager._source_check_cache = available_sources
+        CryptoDataSourceManager._cache_timestamp = current_time
+        
+        return available_sources
+    
     def _check_available_sources(self) -> List[CryptoDataSource]:
-        """检查可用的加密货币数据源"""
+        """检查可用的加密货币数据源（优化版本，避免不必要的API调用）"""
         available = []
         
-        # 检查CoinMarketCap
-        try:
-            from .coinmarketcap_utils import CoinMarketCapAPI
-            api = CoinMarketCapAPI()
-            # 简单测试连接
-            test_data = api.get_crypto_quotes('BTC')
-            if test_data:
-                available.append(CryptoDataSource.COINMARKETCAP)
-                logger.info("✅ CoinMarketCap数据源可用")
-            else:
-                logger.warning("⚠️ CoinMarketCap数据源不可用: API连接失败")
-        except ImportError:
-            logger.warning("⚠️ CoinMarketCap数据源不可用: 依赖库未安装")
-        except Exception as e:
-            logger.warning(f"⚠️ CoinMarketCap数据源不可用: {e}")
-        
-        # 检查CoinGecko
+        # 优先检查主要数据源（CoinGecko）
         try:
             from .coingecko_utils import CoinGeckoAPI
             api = CoinGeckoAPI()
@@ -92,29 +101,30 @@ class CryptoDataSourceManager:
         except Exception as e:
             logger.warning(f"⚠️ CoinGecko数据源不可用: {e}")
         
+        # 只有在主要数据源不可用时才检查备用数据源
+        if not available:
+            logger.info("🔄 主要数据源不可用，检查备用数据源...")
+            
+            # 检查CoinMarketCap作为备用
+            try:
+                from .coinmarketcap_utils import CoinMarketCapAPI
+                api = CoinMarketCapAPI()
+                # 简单测试连接
+                test_data = api.get_crypto_quotes('BTC')
+                if test_data:
+                    available.append(CryptoDataSource.COINMARKETCAP)
+                    logger.info("✅ CoinMarketCap数据源可用")
+                else:
+                    logger.warning("⚠️ CoinMarketCap数据源不可用: API连接失败")
+            except ImportError:
+                logger.warning("⚠️ CoinMarketCap数据源不可用: 依赖库未安装")
+            except Exception as e:
+                logger.warning(f"⚠️ CoinMarketCap数据源不可用: {e}")
+        
+        # 其他数据源检查（预留，暂时跳过）
         # 检查Binance (预留)
-        try:
-            # 这里可以添加Binance API检查
-            # available.append(CryptoDataSource.BINANCE)
-            pass
-        except Exception as e:
-            logger.debug(f"Binance数据源检查跳过: {e}")
-        
-        # 检查Coinbase (预留)
-        try:
-            # 这里可以添加Coinbase API检查
-            # available.append(CryptoDataSource.COINBASE)
-            pass
-        except Exception as e:
-            logger.debug(f"Coinbase数据源检查跳过: {e}")
-        
+        # 检查Coinbase (预留)  
         # 检查CryptoCompare (预留)
-        try:
-            # 这里可以添加CryptoCompare API检查
-            # available.append(CryptoDataSource.CRYPTOCOMPARE)
-            pass
-        except Exception as e:
-            logger.debug(f"CryptoCompare数据源检查跳过: {e}")
         
         return available
     

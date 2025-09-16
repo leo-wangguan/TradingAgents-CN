@@ -88,10 +88,17 @@ class GraphSetup:
             else:
                 logger.debug(f"📈 [DEBUG] 使用标准市场分析师")
 
-            # 所有LLM都使用标准分析师
-            analyst_nodes["market"] = create_market_analyst(
-                self.quick_thinking_llm, self.toolkit
-            )
+            # 根据市场类型切换：加密货币使用 CryptoMarketAnalyst，其余使用股票市场分析师
+            market_type_cfg = self.config.get("market_type", "")
+            if market_type_cfg == "加密货币":
+                logger.debug(f"🪙 [DEBUG] 加密市场：使用CryptoMarketAnalyst替代MarketAnalyst")
+                analyst_nodes["market"] = create_crypto_market_analyst(
+                    self.quick_thinking_llm, self.toolkit
+                )
+            else:
+                analyst_nodes["market"] = create_market_analyst(
+                    self.quick_thinking_llm, self.toolkit
+                )
             delete_nodes["market"] = create_msg_delete()
             tool_nodes["market"] = self.tool_nodes["market"]
 
@@ -134,7 +141,7 @@ class GraphSetup:
             if market_type_cfg == "加密货币":
                 logger.debug(f"🪙 [DEBUG] 加密市场：使用CryptoProjectAnalyst替代FundamentalsAnalyst")
                 analyst_nodes["fundamentals"] = create_crypto_project_analyst(
-                    self.quick_thinking_llm
+                    self.quick_thinking_llm, self.toolkit
                 )
             else:
                 # 所有LLM都使用标准分析师（包含强制工具调用机制）

@@ -41,3 +41,7 @@ pymongo  # MongoDB数据库支持，用于Token使用记录存储
 markdown>=3.4.0  # Markdown处理，用于报告生成
 pypandoc>=1.11  # 文档格式转换，用于导出报告功能
 python-dotenv>=1.0.0  # 环境变量管理，用于.env文件解析
+PyPDF2>=3.0.0  # PDF处理库，用于白皮书解析
+pdfplumber>=0.10.0  # PDF文本提取库，用于白皮书内容分析
+beautifulsoup4>=4.12.0  # HTML解析库，用于网页内容提取
+lxml>=4.9.0  # XML/HTML解析器，BeautifulSoup的依赖

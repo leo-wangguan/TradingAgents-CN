@@ -238,3 +238,60 @@ class CryptoManager(BaseDataSourceManager):
 - 为未来的功能扩展奠定基础
 
 建议先完成加密货币功能的开发，然后根据实际需要决定是否进行全面的架构重构。
+
+---
+
+## 🔄 API 命名一致性重构提案（方案A）
+
+### 背景与动机
+
+当前 `Toolkit.get_stock_market_data_unified` 已同时支持股票与加密货币市场数据（内部通过 `StockUtils.get_market_info` 自动路由，并在 `is_crypto=True` 时调用加密数据源管理器）。然而函数命名中包含 “stock”，与实际职责不完全一致，影响 API 可读性与未来扩展（外汇、商品、期货）。
+
+### 目标
+
+- 统一命名为 `get_market_data_unified`，表达“统一市场数据入口”的含义。
+- 保持向后兼容：保留 `get_stock_market_data_unified` 作为别名/兼容入口，在过渡期内不破坏现有调用。
+- 为后续市场类型扩展（forex/commodities）预留空间。
+
+### 设计与兼容策略
+
+1) 在 `Toolkit` 中新增：
+
+- `get_market_data_unified(...)`：搬运现有实现逻辑（参数、路由、输出保持一致）。
+- 将 `get_stock_market_data_unified(...)` 标注为 deprecated，内部直接调用 `get_market_data_unified(...)`（日志提示迁移）。
+
+2) 文档与示例统一：
+
+- README / 使用手册 / 代码注释统一使用 `get_market_data_unified`。
+- UI/Graph/Agent 层提示语从“股票”改为“市场/资产”，避免误导。
+
+3) 迁移期建议（两小版本周期，例如 vX.Y → vX.Y+2）：
+
+- vX.Y 引入新函数并添加 deprecation log（不报错）。
+- vX.Y+1 更新内部调用点，测试与示例全部切换到新名。
+- vX.Y+2 可考虑移除旧名（或继续保留为软别名，视社区/内部依赖情况）。
+
+### 影响面评估
+
+- 直接影响：
+  - `agents/analysts/market_analyst.py`（工具绑定名展示与提示语）
+  - `agents/analysts/crypto_market_analyst.py`（工具绑定名展示）
+  - `graph/setup.py`（工具节点 `ToolNode` 绑定引用名称）
+  - 任何直接调用 `Toolkit.get_stock_market_data_unified` 的测试与脚本
+
+- 间接影响：
+  - 文档、示例、CLI/脚本说明
+  - 未来 UI 菜单提示语（“股票市场数据”→“市场数据”）
+
+### 渐进式迁移步骤（建议）
+
+1. 在 `Toolkit` 中新增 `get_market_data_unified`，并在 `get_stock_market_data_unified` 内部调用新函数；打印一次性 deprecation 提示（可通过环境变量关闭）。
+2. 更新 `CryptoMarketAnalyst`、`MarketAnalyst` 的系统提示与工具清单显示名称为“统一市场数据工具（支持股票/加密）”。
+3. 更新 `GraphSetup` 的工具节点描述文本（无需更改节点键名）。
+4. 更新文档与示例（README、使用手册、测试注释）。
+5. 一轮回归测试（股票A股/港股/美股 + 加密 BTC/ETH），确保输出一致。
+
+### 备注：与方案B的关系
+
+- 如果未来需要“强类型入口”（例如明确区分 `get_crypto_market_data_unified` 与 `get_stock_market_data_unified`），可在 `get_market_data_unified` 之上提供语义更明确的薄包装，以满足调用方偏好；公共实现仍集中在 `get_market_data_unified`，避免重复逻辑。
+

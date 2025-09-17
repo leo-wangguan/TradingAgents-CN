@@ -45,3 +45,7 @@ PyPDF2>=3.0.0  # PDF处理库，用于白皮书解析
 pdfplumber>=0.10.0  # PDF文本提取库，用于白皮书内容分析
 beautifulsoup4>=4.12.0  # HTML解析库，用于网页内容提取
 lxml>=4.9.0  # XML/HTML解析器，BeautifulSoup的依赖
+aiohttp
+beautifulsoup4
+markdownify
+python-slugify

@@ -15,6 +15,7 @@ services:
       - ./tradingagents:/app/tradingagents
       - ./scripts:/app/scripts
       - ./tests:/app/tests
+      - ./data:/app/data
       # 日志目录映射 - 重要：将容器内日志映射到当前项目的logs目录
       - ./logs:/app/logs
       # 配置目录映射 - 重要：持久化token统计和其他配置数据

@@ -295,3 +295,20 @@ class CryptoManager(BaseDataSourceManager):
 
 - 如果未来需要“强类型入口”（例如明确区分 `get_crypto_market_data_unified` 与 `get_stock_market_data_unified`），可在 `get_market_data_unified` 之上提供语义更明确的薄包装，以满足调用方偏好；公共实现仍集中在 `get_market_data_unified`，避免重复逻辑。
 
+### 附录：依赖管理与构建流程优化
+
+在项目分析工具的重构过程中，发现并解决了一个核心的依赖管理与环境一致性问题。
+
+- **问题识别**: 项目中同时存在 `pyproject.toml` 和一个已明确标注为“已弃用”的 `requirements.txt` 文件。两个文件中的依赖列表不完全同步，造成了依赖管理的混乱。
+- **根因分析**: 经过审查 `Dockerfile`，发现Docker镜像的构建流程错误地依赖于旧的 `requirements.txt` 文件。这直接导致了在容器化环境中运行的应用，其依赖库与基于 `pyproject.toml` 的本地开发环境不一致，是潜在Bug和构建失败的根源。
+- **解决方案**:
+  1. **确立 `pyproject.toml` 为唯一依赖来源**: 将所有项目必需的依赖项（包括本次重构新增的 `aiohttp` 和 `markdownify`）统一整理并添加到 `pyproject.toml` 的 `[project.dependencies]` 部分。
+  2. **重构 `Dockerfile` 构建流程**:
+     - 移除了 `Dockerfile` 中复制和使用 `requirements.txt` 的所有指令。
+     - 更改构建步骤，使其首先复制 `pyproject.toml` 和项目源代码。
+     - 将依赖安装命令从 `pip install -r requirements.txt` 切换为更现代、更高效的 `uv pip install -e .`。该命令直接读取 `pyproject.toml` 来安装所有依赖。
+- **达成效果**:
+  - **环境一致性**: 彻底解决了本地开发环境与Docker生产环境之间的依赖差异问题。
+  - **遵循最佳实践**: 使项目构建流程符合现代Python项目的标准规范（PEP 621）。
+  - **提高可靠性**: 确保了构建过程的确定性和可重复性，降低了因环境问题导致的潜在风险。
+

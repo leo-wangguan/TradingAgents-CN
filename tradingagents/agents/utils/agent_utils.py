@@ -15,10 +15,17 @@ from langchain_openai import ChatOpenAI
 import tradingagents.dataflows.interface as interface
 from tradingagents.default_config import DEFAULT_CONFIG
 from langchain_core.messages import HumanMessage
+import re
 
 # 导入统一日志系统和工具日志装饰器
 from tradingagents.utils.logging_init import get_logger
 from tradingagents.utils.tool_logging import log_tool_call, log_analysis_step
+
+import asyncio
+from typing import Dict, Optional, List
+from tradingagents.dataflows.whitepaper_parser import WhitepaperParser
+from tradingagents.dataflows import crypto_project_repository
+from .gitbook_downloader import GitbookDownloader
 
 # 导入日志模块
 from tradingagents.utils.logging_manager import get_logger
@@ -1048,8 +1055,7 @@ class Toolkit:
                 # 1. 尝试获取AKShare东方财富新闻
                 try:
                     # 处理股票代码
-                    clean_ticker = ticker.replace('.SH', '').replace('.SZ', '').replace('.SS', '')\
-                                   .replace('.HK', '').replace('.XSHE', '').replace('.XSHG', '')
+                    clean_ticker = ticker.replace('.SH', '').replace('.SZ', '').replace('.SS', '').replace('.HK', '').replace('.XSHE', '').replace('.XSHG', '')
                     
                     logger.info(f"🇨🇳🇭🇰 [统一新闻工具] 尝试获取东方财富新闻: {clean_ticker}")
                     
@@ -1084,8 +1090,7 @@ class Toolkit:
                     # 获取公司中文名称用于搜索
                     if is_china:
                         # A股使用股票代码搜索，添加更多中文关键词
-                        clean_ticker = ticker.replace('.SH', '').replace('.SZ', '').replace('.SS', '')\
-                                       .replace('.XSHE', '').replace('.XSHG', '')
+                        clean_ticker = ticker.replace('.SH', '').replace('.SZ', '').replace('.SS', '').replace('.XSHE', '').replace('.XSHG', '')
                         search_query = f"{clean_ticker} 股票 公司 财报 新闻"
                         logger.info(f"🇨🇳 [统一新闻工具] A股Google新闻搜索关键词: {search_query}")
                     else:
@@ -1288,369 +1293,261 @@ class Toolkit:
     @tool
     def get_crypto_whitepaper_analysis(coin_id: str) -> str:
         """
-        获取并分析加密货币项目的白皮书内容（主要信息源）
-        
-        Args:
-            coin_id (str): CoinGecko格式的币种ID (如: bitcoin, ethereum)
-            
-        Returns:
-            str: 白皮书分析结果，包括核心概念、技术架构、经济模型、团队治理等综合信息
+        获取并分析加密货币项目的白皮书内容。
+        该工具会首先尝试查找并解析PDF格式的白皮书。如果失败，它将尝试抓取并解析在线HTML文档网站。
         """
         try:
-            import re
-            import requests
-            from urllib.parse import urljoin, urlparse
-            
-            # 获取项目基础数据
             base_data = Toolkit._get_crypto_project_base_data(coin_id)
+            project_info_text = base_data.get('project_info')
+            coin_dict = base_data.get('coin_data')
             
-            if base_data.get('error'):
-                return f"❌ 无法获取 {coin_id} 的项目信息: {base_data['error']}"
+            if not project_info_text or not coin_dict:
+                return f"❌ 无法获取 {coin_id} 的基础项目信息，白皮书分析中止。"
+
+            project_slug = Toolkit._slugify_project_name(coin_id, coin_dict)
+            Toolkit._ensure_dir(f"data/crypto/whitepapers/{project_slug}")
+
+            all_links_groups = Toolkit._collect_whitepaper_links(project_info_text, coin_dict)
             
-            project_info = base_data['project_info']
-            coin_data = base_data['coin_data']
-            
-            if not project_info or isinstance(project_info, str) and project_info.strip().startswith("❌"):
-                return f"❌ 无法获取 {coin_id} 的项目信息，请检查币种ID或API配置"
-            
-            # 智能白皮书链接发现
-            whitepaper_sources = {
-                'pdf_links': [],
-                'github_links': [],
-                'website_links': [],
-                'documentation_links': []
-            }
-            
-            # 1. 从项目信息中提取各种类型的链接
-            if isinstance(project_info, str):
-                # PDF链接（包括各种格式）
-                pdf_patterns = [
-                    r'https?://[^\s<>"{}|\\^`\[\]]+\.pdf',
-                    r'https?://[^\s<>"{}|\\^`\[\]]+whitepaper[^\s<>"{}|\\^`\[\]]*\.pdf',
-                    r'https?://[^\s<>"{}|\\^`\[\]]+white-paper[^\s<>"{}|\\^`\[\]]*\.pdf'
-                ]
-                for pattern in pdf_patterns:
-                    urls = re.findall(pattern, project_info, re.IGNORECASE)
-                    whitepaper_sources['pdf_links'].extend(urls)
-                
-                # GitHub链接
-                github_pattern = r'https?://github\.com/[^\s<>"{}|\\^`\[\]]+'
-                github_urls = re.findall(github_pattern, project_info, re.IGNORECASE)
-                whitepaper_sources['github_links'].extend(github_urls)
-                
-                # 官网链接
-                website_patterns = [
-                    r'https?://[^\s<>"{}|\\^`\[\]]+\.com',
-                    r'https?://[^\s<>"{}|\\^`\[\]]+\.org',
-                    r'https?://[^\s<>"{}|\\^`\[\]]+\.io'
-                ]
-                for pattern in website_patterns:
-                    urls = re.findall(pattern, project_info, re.IGNORECASE)
-                    whitepaper_sources['website_links'].extend(urls)
-            
-            # 2. 从已获取的结构化数据中提取链接（避免重复请求）
-            try:
-                if isinstance(coin_data, dict):
-                    links = coin_data.get('links', {})
-                    
-                    # 白皮书相关链接
-                    whitepaper_keys = ['whitepaper', 'technical_doc', 'white_paper']
-                    for key in whitepaper_keys:
-                        if links.get(key):
-                            url = links[key]
-                            if url.endswith('.pdf'):
-                                whitepaper_sources['pdf_links'].append(url)
-                            elif 'github' in url:
-                                whitepaper_sources['github_links'].append(url)
-                            else:
-                                whitepaper_sources['website_links'].append(url)
-                    
-                    # 文档链接
-                    doc_keys = ['documentation', 'docs', 'technical_documentation']
-                    for key in doc_keys:
-                        if links.get(key):
-                            whitepaper_sources['documentation_links'].append(links[key])
-                    
-                    # 官网链接
-                    if links.get('homepage'):
-                        whitepaper_sources['website_links'].append(links['homepage'])
-                    
-                    # GitHub仓库
-                    repos = links.get('repos_url', {}).get('github', [])
-                    whitepaper_sources['github_links'].extend(repos)
-                    
-            except Exception as e:
-                logger.warning(f"从已获取的结构化数据提取链接失败: {e}")
-            
-            # 3. 智能GitHub白皮书发现
-            github_whitepaper_urls = []
-            for github_url in whitepaper_sources['github_links'][:3]:  # 限制检查前3个GitHub链接
+            # 策略1：尝试解析PDF
+            pdf_urls = list(dict.fromkeys(all_links_groups.get('pdf', [])))
+            if pdf_urls:
+                pdf_summary, parsed_url = Toolkit._try_parse_pdf(coin_id, pdf_urls)
+                if pdf_summary and parsed_url:
+                    local_pdf_path = Toolkit._save_whitepaper_pdf(coin_id, parsed_url, project_slug)
+                    logger.info(f"✅ 成功从PDF获取白皮书摘要: {local_pdf_path}")
+                    return Toolkit._render_whitepaper_report(coin_id, coin_dict, project_info_text, pdf_summary=pdf_summary, local_pdf_path=local_pdf_path)
+
+            # 策略2：如果PDF失败，尝试从HTML文档网站抓取
+            html_candidates_urls = Toolkit._discover_html_candidates(all_links_groups, project_info_text, coin_dict)
+            if html_candidates_urls:
+                logger.info(f"🔍 未找到可用PDF, 尝试从 {html_candidates_urls[0]} 开始抓取HTML文档...")
+                docs_url = html_candidates_urls[0]
                 try:
-                    # 构建可能的白皮书路径
-                    possible_paths = [
-                        '/blob/main/whitepaper.pdf',
-                        '/blob/master/whitepaper.pdf',
-                        '/blob/main/docs/whitepaper.pdf',
-                        '/blob/master/docs/whitepaper.pdf',
-                        '/blob/main/WHITEPAPER.pdf',
-                        '/blob/master/WHITEPAPER.pdf',
-                        '/tree/main/docs',
-                        '/tree/master/docs',
-                        '/tree/main/whitepaper',
-                        '/tree/master/whitepaper'
-                    ]
-                    
-                    for path in possible_paths:
-                        potential_url = github_url.rstrip('/') + path
-                        github_whitepaper_urls.append(potential_url)
-                        
+                    downloader = GitbookDownloader(base_url=docs_url)
+                    full_markdown_content = asyncio.run(downloader.download())
+
+                    if full_markdown_content and len(full_markdown_content) > 100:
+                        local_md_path = Toolkit._save_html_markdown(coin_id, full_markdown_content, project_slug)
+                        logger.info(f"✅ 成功抓取并转换HTML文档为Markdown: {local_md_path}")
+                        return Toolkit._render_whitepaper_report(coin_id, coin_dict, project_info_text, html_summary=full_markdown_content, local_html_path=local_md_path)
+                    else:
+                        logger.warning(f"抓取HTML文档失败或内容过短: {docs_url}")
                 except Exception as e:
-                    logger.debug(f"GitHub白皮书发现失败: {e}")
-            
-            # 4. 基于项目名称的智能白皮书猜测
-            smart_guesses = []
-            project_name = coin_id.lower()
-            
-            # 常见白皮书URL模式
-            common_patterns = [
-                f"https://{project_name}.org/whitepaper.pdf",
-                f"https://{project_name}.com/whitepaper.pdf",
-                f"https://{project_name}.io/whitepaper.pdf",
-                f"https://www.{project_name}.org/whitepaper.pdf",
-                f"https://www.{project_name}.com/whitepaper.pdf",
-                f"https://www.{project_name}.io/whitepaper.pdf",
-                f"https://{project_name}.org/docs/whitepaper.pdf",
-                f"https://{project_name}.com/docs/whitepaper.pdf",
-                f"https://{project_name}.io/docs/whitepaper.pdf",
-                f"https://{project_name}.org/white-paper.pdf",
-                f"https://{project_name}.com/white-paper.pdf",
-                f"https://{project_name}.io/white-paper.pdf"
-            ]
-            
-            # 特殊项目的已知白皮书URL
-            known_whitepapers = {
-                'bitcoin': [
-                    'https://bitcoin.org/bitcoin.pdf',
-                    'https://bitcoin.org/en/bitcoin-paper'
-                ],
-                'ethereum': [
-                    'https://ethereum.org/en/whitepaper/',
-                    'https://github.com/ethereum/wiki/wiki/White-Paper'
-                ],
-                'cardano': [
-                    'https://cardano.org/whitepaper/',
-                    'https://cardano.org/ouroboros/'
-                ],
-                'polkadot': [
-                    'https://polkadot.network/PolkaDotPaper.pdf',
-                    'https://github.com/w3f/polkadot-white-paper'
-                ],
-                'solana': [
-                    'https://solana.com/solana-whitepaper.pdf',
-                    'https://github.com/solana-labs/solana'
-                ],
-                'avalanche': [
-                    'https://avax.network/whitepapers/',
-                    'https://github.com/ava-labs/avalanche-docs'
-                ]
-            }
-            
-            # 添加已知白皮书
-            if project_name in known_whitepapers:
-                smart_guesses.extend(known_whitepapers[project_name])
-            
-            # 添加通用模式猜测
-            smart_guesses.extend(common_patterns)
-            
-            # 去重
-            smart_guesses = list(set(smart_guesses))
-            
-            # 5. 去重和分类
-            all_links = []
-            all_links.extend([(url, 'PDF文档') for url in set(whitepaper_sources['pdf_links'])])
-            all_links.extend([(url, 'GitHub仓库') for url in set(whitepaper_sources['github_links'])])
-            all_links.extend([(url, '项目官网') for url in set(whitepaper_sources['website_links'])])
-            all_links.extend([(url, '技术文档') for url in set(whitepaper_sources['documentation_links'])])
-            all_links.extend([(url, 'GitHub白皮书') for url in github_whitepaper_urls[:5]])  # 限制数量
-            all_links.extend([(url, '智能猜测') for url in smart_guesses[:10]])  # 限制智能猜测数量
-            
-            # 5. 生成分析报告
-            analysis = f"📄 {coin_id.upper()} 白皮书智能分析\n\n"
-            
-            if not all_links:
-                analysis += f"❌ 未找到可用的白皮书链接\n\n"
-                analysis += f"🔍 搜索范围:\n"
-                analysis += f"- 项目信息文本解析\n"
-                analysis += f"- CoinGecko API结构化数据\n"
-                analysis += f"- GitHub仓库智能发现\n"
-                analysis += f"- 官网链接分析\n\n"
-                analysis += f"💡 建议:\n"
-                analysis += f"- 手动检查项目官网的文档页面\n"
-                analysis += f"- 查看GitHub仓库的docs或whitepaper目录\n"
-                analysis += f"- 搜索项目名称 + 'whitepaper' 关键词\n"
-                analysis += f"- 联系项目团队获取最新白皮书\n"
-                return analysis
-            
-            # 按类型分组显示
-            link_types = {}
-            for url, link_type in all_links:
-                if link_type not in link_types:
-                    link_types[link_type] = []
-                link_types[link_type].append(url)
-            
-            analysis += f"🔗 发现白皮书相关资源: {len(all_links)} 个\n\n"
-            
-            for link_type, urls in link_types.items():
-                analysis += f"**{link_type}** ({len(urls)} 个):\n"
-                for i, url in enumerate(urls[:3], 1):  # 每种类型最多显示3个
-                    analysis += f"  {i}. {url}\n"
-                if len(urls) > 3:
-                    analysis += f"  ... 还有 {len(urls) - 3} 个\n"
-                analysis += "\n"
-            
-            # 6. 尝试解析白皮书内容
-            whitepaper_content = None
-            if all_links:
-                # 优先尝试解析PDF白皮书
-                pdf_links = [url for url, link_type in all_links if link_type == 'PDF文档']
-                if pdf_links:
-                    try:
-                        from tradingagents.dataflows.whitepaper_parser import get_whitepaper_parser
-                        parser = get_whitepaper_parser()
-                        
-                        # 尝试解析第一个PDF链接
-                        whitepaper_url = pdf_links[0]
-                        logger.info(f"正在解析白皮书: {whitepaper_url}")
-                        whitepaper_content = parser.parse_whitepaper(whitepaper_url, coin_id)
-                        
-                        if "error" not in whitepaper_content:
-                            analysis += f"\n📄 白皮书内容解析成功!\n"
-                            analysis += f"- 页数: {whitepaper_content.get('pages', 'N/A')}\n"
-                            analysis += f"- 文本长度: {len(whitepaper_content.get('text', ''))} 字符\n"
-                            
-                            # 显示解析出的结构化信息
-                            sections = whitepaper_content.get('sections', {})
-                            if sections:
-                                analysis += f"\n📋 白皮书结构化信息:\n"
-                                
-                                for section_name, content_list in sections.items():
-                                    if content_list:
-                                        section_display = {
-                                            'team_info': '👥 团队信息',
-                                            'tokenomics': '💰 代币经济学',
-                                            'technology': '🔧 技术架构',
-                                            'roadmap': '🗺️ 路线图',
-                                            'governance': '🏛️ 治理结构',
-                                            'economics': '💼 经济模型',
-                                            'security': '🔒 安全机制',
-                                            'use_cases': '📱 应用场景'
-                                        }.get(section_name, section_name)
-                                        
-                                        analysis += f"\n{section_display}:\n"
-                                        for item in content_list[:2]:  # 最多显示2条
-                                            analysis += f"- {item[:100]}...\n"
-                        else:
-                            analysis += f"\n❌ 白皮书解析失败: {whitepaper_content['error']}\n"
-                    except Exception as e:
-                        logger.warning(f"白皮书解析失败: {e}")
-                        analysis += f"\n⚠️ 白皮书解析遇到问题: {e}\n"
-            
-            # 7. 从项目描述中提取关键分析要素（备用方案）
-            if not whitepaper_content or "error" in whitepaper_content:
-                analysis += f"\n📋 项目描述信息提取（备用方案）:\n"
-                
-                # 技术架构分析
-                tech_keywords = ['consensus', 'blockchain', 'protocol', 'algorithm', 'cryptography', 'security']
-                tech_info = []
-                if isinstance(project_info, str):
-                    lines = project_info.split('\n')
-                    for line in lines:
-                        if any(keyword.lower() in line.lower() for keyword in tech_keywords):
-                            tech_info.append(line.strip())
-                
-                if tech_info:
-                    analysis += f"\n🔧 技术架构线索:\n"
-                    for info in tech_info[:3]:
-                        analysis += f"- {info}\n"
-                
-                # 团队和治理信息
-                team_keywords = ['team', 'founder', 'developer', 'core team', 'advisors', 'governance']
-                team_info = []
-                if isinstance(project_info, str):
-                    lines = project_info.split('\n')
-                    for line in lines:
-                        if any(keyword.lower() in line.lower() for keyword in team_keywords):
-                            team_info.append(line.strip())
-                
-                if team_info:
-                    analysis += f"\n👥 团队治理线索:\n"
-                    for info in team_info[:3]:
-                        analysis += f"- {info}\n"
-                
-                # Tokenomics信息
-                tokenomics_keywords = ['supply', 'circulating', 'total', 'max', 'inflation', 'deflation', 'token', 'economy']
-                tokenomics_info = []
-                if isinstance(project_info, str):
-                    lines = project_info.split('\n')
-                    for line in lines:
-                        if any(keyword.lower() in line.lower() for keyword in tokenomics_keywords):
-                            tokenomics_info.append(line.strip())
-                
-                if tokenomics_info:
-                    analysis += f"\n💰 Tokenomics线索:\n"
-                    for info in tokenomics_info[:3]:
-                        analysis += f"- {info}\n"
-                
-                # 路线图信息
-                roadmap_keywords = ['roadmap', 'milestone', 'phase', 'upgrade', 'launch', 'release', 'development']
-                roadmap_info = []
-                if isinstance(project_info, str):
-                    lines = project_info.split('\n')
-                    for line in lines:
-                        if any(keyword.lower() in line.lower() for keyword in roadmap_keywords):
-                            roadmap_info.append(line.strip())
-                
-                if roadmap_info:
-                    analysis += f"\n🗺️ 路线图线索:\n"
-                    for info in roadmap_info[:3]:
-                        analysis += f"- {info}\n"
-            
-            # 7. 智能分析建议
-            analysis += f"\n📋 智能分析建议:\n"
-            
-            if whitepaper_sources['pdf_links']:
-                analysis += f"✅ 发现PDF白皮书，可直接下载阅读\n"
-            if whitepaper_sources['github_links']:
-                analysis += f"✅ 发现GitHub仓库，可查看最新开发文档\n"
-            if whitepaper_sources['website_links']:
-                analysis += f"✅ 发现项目官网，可查看官方文档页面\n"
-            
-            analysis += f"\n🎯 推荐阅读顺序:\n"
-            analysis += f"1. 优先阅读PDF白皮书（技术细节最完整）\n"
-            analysis += f"2. 查看GitHub仓库的README和docs目录\n"
-            analysis += f"3. 访问项目官网了解最新动态\n"
-            analysis += f"4. 关注技术文档的更新情况\n"
-            
-            analysis += f"\n💡 深度分析要点:\n"
-            analysis += f"- 技术架构和共识机制\n"
-            analysis += f"- 代币经济模型和分配机制\n"
-            analysis += f"- 治理结构和投票机制\n"
-            analysis += f"- 路线图和里程碑规划\n"
-            analysis += f"- 安全性和风险评估\n"
-            analysis += f"- 团队背景和开发活跃度\n"
-            
-            analysis += f"\n🔄 相关分析工具:\n"
-            analysis += f"- 使用 get_crypto_team_governance 获取详细团队信息\n"
-            analysis += f"- 使用 get_crypto_detailed_tokenomics 获取代币经济学分析\n"
-            analysis += f"- 使用 get_crypto_roadmap_development 获取路线图分析\n"
-            analysis += f"- 使用 get_crypto_community_activity 获取社区活跃度分析\n"
-            analysis += f"- 使用 get_crypto_comprehensive_analysis 获取综合分析报告\n"
-            
-            return analysis
-            
+                    logger.error(f"执行Gitbook下载器时出错: {docs_url}, 错误: {e}")
+
+            logger.warning(f"所有白皮书自动提取策略均失败({coin_id})。")
+            return Toolkit._render_whitepaper_report(coin_id, coin_dict, project_info_text)
         except Exception as e:
             logger.error(f"白皮书分析失败: {e}")
             return f"❌ 白皮书分析过程中发生错误: {e}"
+
+    @staticmethod
+    def _slugify_project_name(coin_id, coin_dict):
+        name = coin_dict.get('name') if isinstance(coin_dict, dict) else None
+        if not name:
+            name = coin_id
+        s = str(name).strip().lower()
+        s = re.sub(r"\s+", "-", s)
+        s = re.sub(r"[^a-z0-9\-_]", "", s)
+        return s or coin_id
+
+    @staticmethod
+    def _ensure_dir(path: str):
+        try:
+            os.makedirs(path, exist_ok=True)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _save_whitepaper_pdf(coin_id, pdf_url: str, project_slug: str):
+        try:
+            from urllib.parse import urlparse
+            import requests
+            
+            base_dir = os.path.join("data", "crypto", "whitepapers", project_slug)
+            Toolkit._ensure_dir(base_dir)
+            fn = f"{project_slug}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            out_path = os.path.join(base_dir, fn)
+
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+            with requests.get(pdf_url, stream=True, timeout=30, headers=headers) as r:
+                r.raise_for_status()
+                with open(out_path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            return out_path
+        except Exception as e:
+            logger.debug(f"保存白皮书PDF失败: {e}")
+            return None
+
+    @staticmethod
+    def _save_html_markdown(coin_id, md_text: str, project_slug: str) -> str:
+        try:
+            base_dir = os.path.join("data", "crypto", "whitepapers", project_slug)
+            Toolkit._ensure_dir(base_dir)
+            fn = f"{project_slug}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+            out_path = os.path.join(base_dir, fn)
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(md_text)
+            return out_path
+        except Exception as e:
+            logger.debug(f"保存白皮书Markdown失败: {e}")
+            return ""
+
+    @staticmethod
+    def _collect_whitepaper_links(project_info_text, coin_dict):
+        groups = {'pdf': [], 'github': [], 'website': [], 'docs': []}
+        
+        # From project_info text (less reliable, but good for PDFs)
+        if isinstance(project_info_text, str):
+            pdf_patterns = [
+                r'https?://[^\s<>"{}|\\^`\[\]]+\.pdf'
+            ]
+            for pat in pdf_patterns:
+                groups['pdf'].extend(re.findall(pat, project_info_text, re.IGNORECASE))
+        
+        # From coin_data (source of truth for official links)
+        if isinstance(coin_dict, dict):
+            # The 'links' object might be missing, so we check top-level keys directly.
+            
+            # Website/Homepage links
+            homepage_val = coin_dict.get('homepage')
+            if isinstance(homepage_val, str) and homepage_val:
+                groups['website'].append(homepage_val)
+            
+            # Attempt to find documentation links from raw_data if available
+            raw_data = coin_dict.get('raw_data', {})
+            if isinstance(raw_data, dict):
+                raw_links = raw_data.get('links', {})
+                if isinstance(raw_links, dict):
+                    # Official Documentation links (high priority)
+                    for key in ['documentation', 'docs', 'technical_doc', 'whitepaper']:
+                        value = raw_links.get(key)
+                        if isinstance(value, list):
+                            groups['docs'].extend(filter(None, value))
+                        elif isinstance(value, str) and value:
+                            groups['docs'].append(value)
+
+                    # Github links from raw data for robustness
+                    repos = raw_links.get('repos_url', {}).get('github', [])
+                    groups['github'].extend(repos if isinstance(repos, list) else [repos] if repos else [])
+
+        # Clean up duplicates
+        for key in groups:
+            groups[key] = list(dict.fromkeys(filter(None, groups[key])))
+            
+        logger.info(f"🔗 链接收集结果: { {k: v for k, v in groups.items() if v} }")
+        return groups
+
+    @staticmethod
+    def _try_parse_pdf(coin_id, pdf_urls):
+        if not pdf_urls:
+            return None, None
+        try:
+            parser = get_whitepaper_parser()
+            for url in pdf_urls[:3]:
+                logger.info(f"正在解析白皮书: {url}")
+                content = parser.parse_whitepaper(url, coin_id)
+                if content and 'error' not in content:
+                    return content, url
+        except Exception as e:
+            logger.warning(f"白皮书解析失败: {e}")
+        return None, None
+
+    @staticmethod
+    def _discover_html_candidates(groups, project_info_text, coin_dict):
+        from urllib.parse import urlparse
+        
+        # --- Priority 1: Explicit documentation links from coin_data ---
+        doc_urls = groups.get('docs', [])
+        if doc_urls:
+            logger.info(f"发现 {len(doc_urls)} 个官方文档链接，将优先使用: {doc_urls[:3]}")
+            return doc_urls[:5] # Return up to 5 official doc URLs
+
+        # --- Priority 2: Guess from website/homepage ---
+        logger.info("未找到官方文档链接，尝试从官网猜测...")
+        
+        # Gather base domains from official websites
+        base_domains = set()
+        website_urls = groups.get('website', [])
+        for url in website_urls:
+            try:
+                host = urlparse(url).netloc
+                if host: base_domains.add(host.replace('www.', ''))
+            except: continue
+        
+        # Generate candidate URLs with common doc subdomains
+        candidates = set(website_urls) # Start with the original websites
+        for domain in base_domains:
+            for sub in ['docs', 'documentation', 'help', 'developers', 'wiki', 'blog']:
+                candidates.add(f"https://{sub}.{domain}")
+                
+        final_list = list(dict.fromkeys(filter(None, candidates)))
+        
+        logger.info(f"构建了 {len(final_list)} 个HTML候选页面: {final_list[:3]}")
+        return final_list[:5]
+
+    @staticmethod
+    def _render_whitepaper_report(
+        coin_id: str,
+        coin_dict: dict,
+        project_info_text: str,
+        pdf_summary: Optional[dict] = None,
+        html_summary: Optional[str] = None,
+        local_pdf_path: Optional[str] = None,
+        local_html_path: Optional[str] = None
+    ) -> str:
+        lines = [f"📄 **{coin_dict.get('name', coin_id.upper())} 白皮书与文档分析**\n"]
+        
+        if local_pdf_path or local_html_path:
+            lines.append("\n**📦 本地资产**")
+            if local_pdf_path: lines.append(f"- 已保存PDF: `{local_pdf_path}`")
+            if local_html_path: lines.append(f"- 已保存Markdown副本: `{local_html_path}`")
+        
+        if pdf_summary: lines.extend(Toolkit._lines_pdf_summary(pdf_summary, local_pdf_path))
+        if html_summary: lines.extend(Toolkit._lines_html_summary(html_summary, local_html_path))
+
+        if not pdf_summary and not html_summary:
+            lines.append("\n**⚠️ 未能自动提取白皮书或文档内容。**\n请参考下面的资源链接进行手动分析。")
+
+        all_links = Toolkit._collect_whitepaper_links(project_info_text, coin_dict)
+        lines.append("\n**🔗 相关资源链接**")
+        for link_type, urls in all_links.items():
+            if urls:
+                unique_urls = list(dict.fromkeys(filter(None, urls)))
+                if unique_urls: lines.append(f"- **{link_type.replace('_', ' ').title()}**: {unique_urls[0]}")
+
+        lines.extend(Toolkit._lines_recommendations())
+        return "\n".join(lines)
+
+    @staticmethod
+    def _lines_pdf_summary(summary: dict, local_path: Optional[str]) -> List[str]:
+        lines = ["\n**📄 PDF白皮书摘要**"]
+        sections = summary.get('sections', {})
+        if sections:
+             for section, content_list in sections.items():
+                 if content_list: lines.append(f"  - **{section.replace('_', ' ').title()}**: {content_list[0][:150]}...")
+        else:
+            lines.append(f"  - 提取文本预览: {summary.get('text', '')[:200]}...")
+        return lines
+
+    @staticmethod
+    def _lines_html_summary(summary: str, local_path: Optional[str]) -> List[str]:
+        lines = ["\n**🌐 HTML文档摘要**"]
+        summary_preview = (summary[:1500] + '\n...') if len(summary) > 1500 else summary
+        lines.append(f"```markdown\n{summary_preview}\n```")
+        return lines
+
+    @staticmethod
+    def _lines_recommendations() -> List[str]:
+        return [
+            "\n**💡 分析建议**",
+            "- **技术深度**: 审查GitHub仓库以评估开发活动的真实性。",
+            "- **经济模型**: 仔细分析Tokenomics，特别是代币分配和释放计划。",
+            "- **团队背景**: 深入调查核心团队成员的背景和过往项目经验。",
+            "- **路线图**: 对比路线图承诺和实际开发进展。"
+        ]
 
     @staticmethod
     @tool

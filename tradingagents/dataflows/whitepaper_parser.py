@@ -76,10 +76,29 @@ class WhitepaperParser:
                 logger.info(f"白皮书已缓存: {file_path}")
                 return str(file_path)
             
-            # 下载文件
+            # 下载文件，增加头部验证
             logger.info(f"正在下载白皮书: {url}")
-            response = requests.get(url, timeout=30, stream=True)
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+            
+            # 1. 先用HEAD请求检查Content-Type
+            try:
+                head_response = requests.head(url, timeout=10, headers=headers, allow_redirects=True)
+                head_response.raise_for_status()
+                content_type = head_response.headers.get('Content-Type', '')
+                if 'application/pdf' not in content_type:
+                    logger.warning(f"链接非PDF(Content-Type: {content_type})，跳过下载: {url}")
+                    return None
+            except Exception as head_err:
+                logger.debug(f"HEAD请求失败: {head_err}，将使用GET请求验证")
+
+            # 2. 使用GET请求下载并再次验证
+            response = requests.get(url, timeout=30, stream=True, headers=headers)
             response.raise_for_status()
+            
+            content_type = response.headers.get('Content-Type', '')
+            if 'application/pdf' not in content_type:
+                logger.warning(f"链接非PDF(Content-Type: {content_type})，跳过下载: {url}")
+                return None
             
             # 保存文件
             with open(file_path, 'wb') as f:

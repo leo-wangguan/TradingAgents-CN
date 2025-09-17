@@ -52,6 +52,9 @@ dependencies = [
     "pdfplumber>=0.10.0",
     "beautifulsoup4>=4.12.0",
     "lxml>=4.9.0",
+    "aiohttp>=3.9.5",
+    "markdownify>=1.2.0",
+    "python-slugify>=8.0.0",
 ]
 
 [project.scripts]
